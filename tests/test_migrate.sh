@@ -42,6 +42,29 @@ test_migrate_moves_ignored_files_into_worktree() {
   assert_absent .env
 }
 
+test_migrate_handles_ignored_inside_tracked_dir() {
+  # Regression: a tracked directory that also contains ignored files. The
+  # ignored bits must land back inside the recreated tracked dir, not collide
+  # with it. (Previously failed: "mv: cannot overwrite ... Directory not empty".)
+  sandbox
+  make_repo
+  printf 'node_modules/\n__pycache__/\n' > .gitignore
+  mkdir -p worker/src && echo 'tracked' > worker/src/index.js
+  echo '{}' > worker/package.json
+  git add -A && git commit -qm worker
+  # ignored content nested inside the tracked 'worker' dir
+  mkdir -p worker/node_modules/dep && echo x > worker/node_modules/dep/i.js
+  gitwt migrate -y >/dev/null
+  assert_file main/worker/src/index.js                 # tracked file restored
+  assert_file main/worker/package.json                 # tracked file restored
+  assert_file main/worker/node_modules/dep/i.js        # ignored file re-merged
+  # no staging dir left behind
+  local leftover; leftover="$(compgen -G '.git-wt-ignored.*' || true)"
+  assert_eq "$leftover" "" "staging dir not cleaned up"
+  # The worktree still sees node_modules as ignored (clean status).
+  assert_eq "$(git -C main status --porcelain)" ""
+}
+
 test_migrate_resumes_after_partial() {
   sandbox
   make_repo feat/a feat/b

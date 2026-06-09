@@ -219,13 +219,16 @@ cmd_migrate() {
       [[ -n "$e" ]] && committed+=("$e")
     done < <(git ls-tree --name-only HEAD 2>/dev/null || true)
 
-    # Ignored top-level entries to move into a worktree.
+    # Ignored paths to move into a worktree. Keep the FULL relative path (do not
+    # collapse to the top-level component): a tracked directory can contain
+    # ignored files (e.g. node_modules/ inside a tracked cloudflare-worker/), and
+    # collapsing would try to relocate the whole tracked dir and collide with the
+    # checked-out copy. git already gives the minimal set (fully-ignored dirs as
+    # `dir/`, otherwise individual ignored paths).
     while IFS= read -r e; do
       [[ -z "$e" ]] && continue
-      e="${e%/}"                       # strip trailing slash on dirs
-      [[ "$e" == */* ]] && e="${e%%/*}" # keep only the top-level component
-      ignored+=("$e")
-    done < <(git ls-files --others --ignored --exclude-standard --directory | awk -F/ '{print $1}' | sort -u)
+      ignored+=("${e%/}")              # strip trailing slash; keep the full path
+    done < <(git ls-files --others --ignored --exclude-standard --directory)
   fi
 
   # Which branches still need a worktree? (drives idempotent resume.)
@@ -280,7 +283,10 @@ cmd_migrate() {
     stash="$(mktemp -d "${container}/.git-wt-ignored.XXXXXX")"
     step "setting aside ignored files"
     for e in "${ignored[@]}"; do
-      [[ -e "$e" || -L "$e" ]] && run mv -- "$e" "$stash/"
+      if [[ -e "$e" || -L "$e" ]]; then
+        run mkdir -p "$stash/$(dirname -- "$e")"
+        run mv -- "$e" "$stash/$e"
+      fi
     done
   fi
 
@@ -305,9 +311,16 @@ cmd_migrate() {
   if [[ -n "$stash" ]]; then
     step "moving ignored files into ${ignored_target}/"
     for e in "${ignored[@]}"; do
-      [[ -e "$stash/$e" || -L "$stash/$e" ]] && run mv -- "$stash/$e" "${ignored_target}/"
+      if [[ -e "$stash/$e" || -L "$stash/$e" ]]; then
+        # The tracked parent dir (if any) was already recreated by the worktree
+        # checkout; we drop the ignored path back in at the same relative spot.
+        run mkdir -p "${ignored_target}/$(dirname -- "$e")"
+        run mv -- "$stash/$e" "${ignored_target}/$e"
+      fi
     done
-    rmdir "$stash" 2>/dev/null || warn "leftover files in $stash — please check."
+    # Only empty scaffolding dirs remain now; remove them.
+    find "$stash" -type d -empty -delete 2>/dev/null || true
+    [[ -d "$stash" ]] && warn "leftover files in $stash — please check." || true
   fi
 
   # Read-only remote sanity check (no writes).
