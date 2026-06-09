@@ -94,9 +94,14 @@ standard patterns:
   that exist verbatim in a commit (because they are recreated inside the
   worktrees).
 - **M10 (State-driven).** While git-ignored files (such as `.env` or
-  `node_modules/`) exist at the container root, `migrate` shall move them into the
+  `node_modules/`) exist in the repository, `migrate` shall move them into the
   current branch's worktree; if the repository is on a detached HEAD, it shall use
   the default branch's worktree instead.
+- **M10a (Ubiquitous).** `migrate` shall preserve each ignored file's path when
+  moving it, so an ignored file nested inside a tracked directory (for example
+  `worker/node_modules/`) is placed back at the same relative path inside the
+  worktree's recreated tracked directory, rather than displacing or colliding
+  with that directory.
 - **M11 (Ubiquitous).** `migrate` shall not write any change to remote
   configuration: the fetch refspec, remote-tracking refs, `origin/HEAD`, and
   per-branch upstreams shall remain exactly as they were.

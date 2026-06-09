@@ -104,11 +104,24 @@ already bare, migrate:
   `worktree ` lines.
 - Committed root entries to remove: `git ls-tree --name-only HEAD` (top level).
 - Ignored entries to move: `git ls-files --others --ignored --exclude-standard
-  --directory`, reduced to top-level components.
+  --directory`. Keep each entry's **full relative path** — do *not* collapse to
+  the top-level component (git already returns the minimal set: fully-ignored
+  dirs as `dir/`, otherwise individual ignored paths).
 - Ignored files are set aside (temp dir) before the bare flip / removal, then
-  moved into the target worktree once it exists.
+  moved into the target worktree once it exists. Both the set-aside and the
+  restore are **path-preserving** (`mkdir -p` the parent first), so an ignored
+  file nested in a *tracked* directory (e.g. `worker/node_modules/`) drops back
+  inside the worktree's recreated tracked dir instead of colliding with it.
+  Empty staging scaffolding is removed afterward.
 - All `mv` operations are same-filesystem (cheap) — `node_modules/` etc. move
   instantly rather than being regenerated.
+
+  > **Bug fixed (post-v1):** the original code collapsed ignored paths to their
+  > top-level component, so a tracked dir containing ignored files was moved
+  > wholesale; the worktree checkout then recreated the tracked copy and the
+  > restore failed with `mv: cannot overwrite ... Directory not empty`, leaving a
+  > `.git-wt-ignored.*` staging dir behind. Covered by
+  > `test_migrate_handles_ignored_inside_tracked_dir`.
 
 ## Verification (all passing)
 
@@ -119,6 +132,9 @@ already bare, migrate:
 5. **migrate (local, multi-branch + ignored):** dry-run plan, then `-y`; all
    branches → worktree folders; `.env`/`node_modules/` land in the current
    branch's worktree; dirty tree is rejected first.
+5a. **migrate (ignored inside a tracked dir):** ignored files nested in a tracked
+   directory (e.g. `worker/node_modules/`) are restored at the same relative path
+   with no collision and no leftover staging dir.
 6. **migrate (remote clone):** `remote.origin.fetch`, branch upstreams, and
    `origin/HEAD` all **unchanged** before vs after.
 7. **migrate resume:** interrupt mid-loop (or pre-create one worktree), re-run →
