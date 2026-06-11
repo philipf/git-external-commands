@@ -18,10 +18,10 @@ wt() {
   local f d
   f=$(mktemp) || { git wt "$@"; return; }
   GIT_WT_CD_FILE="$f" git wt "$@"
-  local status=$?
+  local rc=$?
   d=$(cat "$f" 2>/dev/null); rm -f "$f"
   [ -n "$d" ] && [ -d "$d" ] && cd "$d"
-  return $status
+  return $rc
 }
 
 # gj — fuzzy-pick a git repo/worktree and cd into it (gj-pick prints the path).
