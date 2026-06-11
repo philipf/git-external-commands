@@ -22,21 +22,44 @@ through empty intermediate directories.
 
 ### Install
 
-Symlink it onto your `PATH` as `git-wt` (no extension) so git exposes it as the
-`git wt` subcommand:
+Run [`symlink-init.sh`](../symlink-init.sh) at the repo root once per machine —
+it symlinks `git-wt` onto your `PATH` (as `git-wt`, no extension, so git exposes
+it as the `git wt` subcommand) along with the other tools:
 
 ```bash
-ln -s "$(pwd)/git-wt" ~/.local/bin/git-wt
-```
-
-Then:
-
-```bash
+../symlink-init.sh
 git wt help
 ```
 
 > Named `git-wt` (not `git-worktree`) on purpose — `git worktree` is already a
 > built-in git command.
+
+### `wt` — auto-`cd` into the new worktree
+
+`git wt add`/`init`/`migrate` create a worktree and then tell you to `cd` into
+it — because a subprocess can't change its parent shell's directory. The `wt`
+shell function (in [`shell-init.sh`](../shell-init.sh) at the repo root, alongside
+`gj`/`gjj`) lands you there automatically. After running the installer above,
+source it from your shell rc (`~/.zshrc` / `~/.bashrc` — works in both) via the
+symlink, so it's machine-independent:
+
+```sh
+[ -f ~/.local/bin/shell-init.sh ] && source ~/.local/bin/shell-init.sh
+```
+
+Then:
+
+```bash
+wt add feature/x   # creates the worktree, then drops you inside it
+wt init            # → cd into the new worktree
+wt migrate         # → cd into the current branch's worktree
+```
+
+How it works: when `GIT_WT_CD_FILE` is set, `git wt` writes the absolute path of
+the worktree to that file on success; the function reads it back and `cd`s. Plain
+`git wt …` (the var unset) behaves exactly as before and just prints the `cd`
+hint. The jump is skipped for no-ops — a `--dry-run`, or an `add`/`migrate` that
+finds the worktree already there leaves you put.
 
 ### Usage
 

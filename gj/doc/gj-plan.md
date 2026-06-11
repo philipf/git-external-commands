@@ -1,17 +1,17 @@
 # `gj` — Implementation Plan
 
-Implements the spec in [PRD.md](./PRD.md). Style follows `ext-commands/git-wt`:
+Implements the spec in [PRD.md](./PRD.md). Style follows `wt/git-wt`:
 `#!/usr/bin/env bash`, `set -euo pipefail`, tty-gated colors, small focused
 helpers.
 
 ## Deliverables
 
-1. `scripts/gj-pick` — the bash worker (executable).
+1. `gj/gj-pick` — the bash worker (executable).
 2. README section documenting install (PATH + `gj` shell function).
 
 No tests for v1 (per PRD).
 
-## File: `scripts/gj-pick`
+## File: `gj/gj-pick`
 
 ### Header & options
 
@@ -132,10 +132,10 @@ hint (PATH + `gj` function). Mirror `git-wt`'s `usage()` formatting.
 
 ## Install / wiring
 
-1. Make executable: `chmod +x scripts/gj-pick`.
+1. Make executable: `chmod +x gj/gj-pick`.
 2. Put on `PATH` (e.g. symlink):
    ```bash
-   ln -s "$(pwd)/scripts/gj-pick" ~/.local/bin/gj-pick
+   ln -s "$(pwd)/gj/gj-pick" ~/.local/bin/gj-pick
    ```
 3. Add the `gj` function to the (chezmoi-managed) shell rc:
    ```sh
@@ -148,7 +148,7 @@ hint (PATH + `gj` function). Mirror `git-wt`'s `usage()` formatting.
 
 ## README updates
 
-Add a `gj` / `gj-pick` section to `scripts/` (or the repo README) covering:
+Add a `gj` / `gj-pick` section to `gj/` (or the repo README) covering:
 - what it does (jump to repos & worktrees),
 - dependencies (`fd`, `fzf`, `git`),
 - the PATH install and the `gj` function snippet,

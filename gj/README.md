@@ -33,22 +33,20 @@ repo deliberately kept inside a hidden dir (e.g. `~/.dotfiles`) won't be listed.
 The worker (`gj-pick`) prints the chosen path; a small shell function does the
 `cd` (a child process can't change its parent shell's directory).
 
-1. Put `gj-pick` on your `PATH` (e.g. symlink it):
+1. Run [`symlink-init.sh`](../symlink-init.sh) at the repo root once per machine.
+   It puts `gj-pick` on your `PATH` (symlinked into `~/.local/bin`) along with the
+   other tools.
 
-   ```bash
-   ln -s "$(pwd)/gj-pick" ~/.local/bin/gj-pick
-   ```
-
-2. Add the `gj` function to your shell rc (`~/.zshrc` / `~/.bashrc` — works in
-   both):
+2. Source the shell functions from your rc (`~/.zshrc` / `~/.bashrc` — works in
+   both). `gj` and `gjj` live in [`shell-init.sh`](../shell-init.sh) at the repo
+   root, alongside `wt`; source it via the symlink so it's machine-independent:
 
    ```sh
-   gj()  { local d; d=$(gj-pick "$@") || return; [ -n "$d" ] && cd "$d"; }
-   gjj() { gj --cwd "$@"; }   # same, but scoped to the current directory
+   [ -f ~/.local/bin/shell-init.sh ] && source ~/.local/bin/shell-init.sh
    ```
 
-   `gjj` is an optional shorthand for `gj --cwd` — e.g. `gjj api` scopes the
-   pick to `$PWD` and pre-filters with `api`.
+   `gjj` is a shorthand for `gj --cwd` — e.g. `gjj api` scopes the pick to `$PWD`
+   and pre-filters with `api`.
 
 `gj-pick` on its own just prints a path to stdout (pipeable / scriptable);
 `gj` is the interactive jump.

@@ -2,9 +2,28 @@
 
 A small collection of git helpers and shell scripts for working with repositories and worktrees.
 
+## Install
+
+Run the installer once per machine. It symlinks the executables (`git-wt`,
+`gj-pick`) and the shell-init helper into `~/.local/bin` (override with
+`BINDIR=…`), using absolute paths so they keep working wherever this repo lives:
+
+```sh
+./symlink-init.sh
+```
+
+Then source the shell wrappers (`wt`, `gj`, `gjj`) from your `~/.zshrc` /
+`~/.bashrc` — point at the **symlink**, not the repo, so it's machine-independent:
+
+```sh
+[ -f ~/.local/bin/shell-init.sh ] && source ~/.local/bin/shell-init.sh
+```
+
+(Ensure `~/.local/bin` is on your `PATH`.)
+
 ## Contents
 
-### [ext-commands/](ext-commands/README.md) — Git subcommands
+### [wt/](wt/README.md) — Git subcommands
 
 Custom commands that plug into git as `git <command>`.
 
@@ -12,10 +31,16 @@ Custom commands that plug into git as `git <command>`.
 |---------|-------------|
 | `git wt` | Sets up and manages a **bare-repo + worktree** layout — one container folder holding the bare object store and one sibling folder per branch. Supports `init`, `migrate`, and `add`. |
 
-### [scripts/](scripts/README.md) — Standalone shell tools
+### [gj/](gj/README.md) — Standalone shell tools
 
 Standalone tools that live on your `PATH` but are not git subcommands.
 
 | Script | What it does |
 |--------|-------------|
 | `gj` / `gj-pick` | Fuzzy-jump to any git repo or worktree under your home directory (or the current directory with `--cwd`). Uses `fzf` to pick and then `cd`s into it. |
+
+### [shell-init.sh](shell-init.sh) — shell wrappers
+
+The `cd`-into-place wrappers that must run in your shell (a child process can't
+change your shell's directory): `wt` (for `git wt`), `gj`, and `gjj`. Installed
+via the symlink + source line in [Install](#install) above.

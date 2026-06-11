@@ -60,6 +60,23 @@ confirm() {
   [[ "$reply" =~ ^[Yy]$ ]]
 }
 
+# wrapped_cd — true when invoked via the `wt` shell wrapper AND we'll actually
+# land somewhere (GIT_WT_CD_FILE is set and this isn't a dry-run). Used both to
+# emit the cd target and to drop the now-redundant 'cd <path>' hint.
+wrapped_cd() { (( ! DRY_RUN )) && [[ -n "${GIT_WT_CD_FILE:-}" ]]; }
+
+# emit_cd_target ABS_PATH — record the worktree the `wt` wrapper should cd into.
+# A child process can't change its parent shell's directory, so the wrapper sets
+# GIT_WT_CD_FILE to a temp file and reads it back after we exit. No-op for plain
+# `git wt …` (var unset) and under --dry-run. Call only on success paths that
+# created a place to work; never on early-return no-ops. Path must be absolute.
+# (Returns 0 even when not wrapped: it's a bare statement under `set -e`, so a
+# non-zero return would abort the script before the closing output.)
+emit_cd_target() {
+  wrapped_cd || return 0
+  printf '%s\n' "$1" > "$GIT_WT_CD_FILE"
+}
+
 usage() {
   cat <<EOF
 ${PROG} — bare-repo + worktree layout tool
@@ -284,9 +301,10 @@ cmd_init() {
   fi
 
   print_tree "$container"
+  emit_cd_target "$container/$wtdir"
   info ""
   info "Next steps:"
-  info "  cd ${wtdir}"
+  wrapped_cd || info "  cd ${wtdir}"
   info "  # make your first commit, then: git push -u origin ${branch}"
 }
 
@@ -490,9 +508,10 @@ cmd_migrate() {
   fi
 
   print_tree "$container"
+  emit_cd_target "$container/$ignored_target_dir"
   info ""
   info "Next steps:"
-  info "  cd ${ignored_target_dir}"
+  wrapped_cd || info "  cd ${ignored_target_dir}"
   info "  git worktree list"
 }
 
@@ -605,12 +624,17 @@ cmd_add() {
   fi
 
   print_tree "$container"
-  info ""
-  info "Next steps:"
-  info "  cd ${wt}"
-  if (( ${#hints[@]} )); then
-    info "  # skipped heavy dirs — rebuild them in the new worktree:"
-    for h in "${hints[@]}"; do info "  #   ${h}"; done
+  emit_cd_target "$wt"
+  # Skip the whole block when wrapped with nothing left to say (the cd hint is
+  # redundant and there are no heavy-dir rebuild hints).
+  if ! wrapped_cd || (( ${#hints[@]} )); then
+    info ""
+    info "Next steps:"
+    wrapped_cd || info "  cd ${wt}"
+    if (( ${#hints[@]} )); then
+      info "  # skipped heavy dirs — rebuild them in the new worktree:"
+      for h in "${hints[@]}"; do info "  #   ${h}"; done
+    fi
   fi
 }
 

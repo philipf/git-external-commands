@@ -103,7 +103,7 @@ directories are matched but not descended into.
 The shell cannot have its working directory changed by a child process, so `gj`
 is split into a worker plus a thin shell function:
 
-- **`scripts/gj-pick`** — the bash worker. Put on `PATH` (e.g. symlinked into
+- **`gj/gj-pick`** — the bash worker. Put on `PATH` (e.g. symlinked into
   `~/.local/bin`); prints the chosen path to stdout and is usable standalone in
   scripts. (A plain standalone name rather than a `git-` subcommand: the only
   intended entry point is the `gj` function, so the git-dispatch hop adds no
