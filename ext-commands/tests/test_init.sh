@@ -56,3 +56,11 @@ test_init_respects_default_branch_config() {
   assert_file dev
   assert_absent main
 }
+
+test_init_flattens_slashed_branch() {
+  sandbox
+  gitwt init feature/x >/dev/null
+  assert_file feature-x                       # folder flattened
+  assert_absent feature/x                     # not nested
+  assert_eq "$(git -C feature-x symbolic-ref --short HEAD)" "feature/x"  # branch keeps slash
+}

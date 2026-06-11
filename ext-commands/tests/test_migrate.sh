@@ -23,9 +23,34 @@ test_migrate_creates_worktree_per_branch() {
   gitwt migrate -y >/dev/null
   assert_eq "$(git rev-parse --is-bare-repository)" "true"
   assert_file main
-  assert_file feat/a
-  assert_file feat/b
+  assert_file feat-a             # folders flattened
+  assert_file feat-b
+  assert_absent feat/a           # not nested
+  assert_eq "$(git -C feat-a rev-parse --abbrev-ref HEAD)" "feat/a"  # branch keeps slash
   assert_absent app.js           # committed root file removed
+}
+
+test_migrate_fails_on_colliding_folder_names() {
+  sandbox
+  make_repo feat/x
+  git branch feat-x              # feat/x and feat-x both normalise to feat-x/
+  assert_fails gitwt migrate -y
+  assert_eq "$(git rev-parse --is-bare-repository)" "false"   # aborted before any change
+}
+
+test_migrate_leaves_legacy_nested_worktree_alone() {
+  sandbox
+  make_repo feat/a
+  # Reproduce a repo migrated under the old nested scheme: branch feat/a lives in
+  # a nested folder feat/a/, not the flattened feat-a/.
+  git config core.bare true
+  rm -f app.js
+  git worktree add -q main main
+  git worktree add -q feat/a feat/a
+  local out; out="$(gitwt migrate -y)"
+  assert_contains "$out" "Already migrated"   # branch-based detection sees it
+  assert_file feat/a                          # legacy layout untouched
+  assert_absent feat-a                        # no duplicate flat worktree created
 }
 
 test_migrate_moves_ignored_files_into_worktree() {
@@ -74,8 +99,8 @@ test_migrate_resumes_after_partial() {
   git worktree add -q main main
   gitwt migrate -y >/dev/null
   assert_file main
-  assert_file feat/a
-  assert_file feat/b
+  assert_file feat-a
+  assert_file feat-b
 }
 
 test_migrate_noop_when_already_complete() {

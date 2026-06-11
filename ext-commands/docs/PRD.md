@@ -10,17 +10,22 @@ store (`.git/`) plus one sibling folder per branch.
 myrepo/
 ├── .git/        ← bare object store
 ├── main/        ← worktree for branch `main`
-└── feature/x/   ← worktree for branch `feature/x`
+└── feature-x/   ← worktree for branch `feature/x` (folder flattened: `/` → `-`)
 ```
+
+The branch ref keeps its slashes (`feature/x`); only the on-disk folder is
+flattened to `feature-x/`. Git's `worktree add <path> <branch>` decouples the
+folder from the ref, so a flat layout never forces navigation through empty
+intermediate directories.
 
 This makes it easy to work on several branches — or run several agents/editors —
 side by side, each in its own clean folder.
 
 ## Scope
 
-In scope: two subcommands, `init` (brand-new repo) and `migrate` (existing
-repo). Out of scope (for now): `add`, `list`, `remove` worktree subcommands, and
-any remote-mutating behaviour.
+In scope: the subcommands `init` (brand-new repo), `migrate` (existing repo), and
+`add` (one worktree on an existing layout). Out of scope (for now): `list` and
+`remove` worktree subcommands, and any remote-mutating behaviour.
 
 ## Requirements (EARS)
 
@@ -45,8 +50,17 @@ standard patterns:
   shall print usage and exit with an error.
 - **G5 (Ubiquitous).** The tool shall produce the layout with the bare store
   named `.git/` directly (no `.bare` pointer file).
-- **G6 (Ubiquitous).** The tool shall name each worktree folder exactly after its
-  branch, so a branch like `feature/x` becomes a nested folder `feature/x/`.
+- **G6 (Ubiquitous).** The tool shall name each worktree folder after its branch
+  with every `/` replaced by `-`, so a branch like `feature/x` becomes a flat
+  folder `feature-x/`. All other characters are preserved verbatim (no
+  lowercasing or other slugification).
+- **G6a (Ubiquitous).** The tool shall create the branch ref unchanged, keeping
+  any slashes (`feature/x` stays `feature/x`); only the on-disk folder is
+  flattened. The folder-to-branch mapping is held by git's worktree metadata.
+- **G6b (Unwanted behaviour).** If two branches would map to the same folder name
+  (for example `feat/x` and `feat-x`, both `feat-x/`), then the tool shall fail
+  fast — naming the conflicting branches — before making any change, rather than
+  auto-disambiguating with a suffix.
 
 ### `init`
 
@@ -89,7 +103,10 @@ standard patterns:
   dry run, then `migrate` shall ask for confirmation and abort unless the user
   agrees.
 - **M8 (Ubiquitous).** `migrate` shall convert the repository to bare and create a
-  worktree folder for **every** local branch.
+  worktree folder (per G6) for **every** local branch.
+- **M8a (Unwanted behaviour).** If any two local branches would map to the same
+  folder name (per G6b), then `migrate` shall abort before making any change and
+  name the conflicting branches.
 - **M9 (Ubiquitous).** `migrate` shall remove from the container root only files
   that exist verbatim in a commit (because they are recreated inside the
   worktrees).
@@ -114,6 +131,12 @@ standard patterns:
   worktrees that are missing.
 - **M14 (Event-driven).** When every local branch already has a worktree,
   `migrate` shall report that nothing needs doing and exit successfully.
+- **M14a (Ubiquitous).** `migrate` shall decide whether a branch needs a worktree
+  by whether that **branch** is already checked out somewhere other than the
+  container root — not by whether the flattened folder path exists. This keeps it
+  idempotent on repositories created under an earlier nested-folder layout: such
+  legacy worktrees are recognised as already present and left untouched (no
+  duplicate flattened worktree is created, no rename is attempted).
 - **M15 (Event-driven).** When `migrate` finishes, the tool shall print the
   resulting layout and the next steps.
 

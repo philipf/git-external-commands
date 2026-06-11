@@ -12,11 +12,13 @@ checked-out branch.
 myrepo/
 ├── .git/        ← bare object store
 ├── main/        ← worktree for branch `main`
-└── feature/x/   ← worktree for branch `feature/x`
+└── feature-x/   ← worktree for branch `feature/x` (folder flattened: `/` → `-`)
 ```
 
 This is handy for running several agents/editors in parallel, each in its own
-clean worktree sibling.
+clean worktree sibling. A slashed branch like `feature/x` keeps its slash as a
+ref but lives in a flat folder `feature-x/`, so you never have to navigate
+through empty intermediate directories.
 
 ### Install
 
@@ -84,11 +86,12 @@ layout — the container root **or** another worktree.
 
 Why not just `git worktree add`? Because the built-in resolves a relative path
 against your **current directory**, so from inside `main/` it would nest the new
-worktree at `main/feature/x` instead of as a sibling. `git wt add` always anchors
-to the container and names the folder exactly after the branch.
+worktree at `main/feature-x` instead of as a sibling. `git wt add` always anchors
+to the container and names the folder after the branch with `/` flattened to `-`.
 
-- **Anchored placement.** Creates the worktree at `<container>/<branch>` (verbatim,
-  nested for slashed names), regardless of where you run it.
+- **Anchored, flat placement.** Creates the worktree at
+  `<container>/<branch-with-slashes-as-dashes>` (so `feature/x` → `feature-x/`),
+  regardless of where you run it. The branch ref keeps its slashes.
 - **Offline branch resolution.** Existing local branch → checked out; otherwise a
   matching remote-tracking branch (e.g. `origin/<branch>`) → a local tracking
   branch (no fetch); otherwise a **new** branch from `--from` (default `HEAD`).

@@ -4,9 +4,10 @@
 #
 # Layout:
 #   myrepo/
-#   ├── .git/        ← bare object store (named .git directly, no pointer file)
-#   ├── main/        ← worktree for branch `main`
-#   └── feature/x/   ← worktree for branch `feature/x` (verbatim, nested ok)
+#   ├── .git/          ← bare object store (named .git directly, no pointer file)
+#   ├── main/          ← worktree for branch `main`
+#   └── feature-x/     ← worktree for branch `feature/x` (folder flattened: the
+#                        branch keeps its slash, the folder uses `-`)
 #
 # Subcommands:
 #   git wt init [branch]            stand up the layout in a brand-new repo
@@ -86,6 +87,12 @@ Install (so 'git wt …' works):
 EOF
 }
 
+# wt_dirname BRANCH — the on-disk worktree folder for BRANCH: the branch name
+# with every '/' replaced by '-'. The branch ref itself keeps its slashes; git's
+# 'worktree add <path> <branch>' decouples the folder from the ref. So branch
+# `feat/new-shiny` lives in a flat folder `feat-new-shiny/`.
+wt_dirname() { printf '%s' "${1//\//-}"; }
+
 # Resolve the default branch name: init.defaultBranch, else "main".
 default_branch_name() {
   local b
@@ -110,16 +117,22 @@ print_tree() {
   info "${C_GRN}Layout ready${C_RST} at ${container}:"
   info "  ${container}/"
   info "  ├── .git/        ← bare object store"
-  local wt
-  while IFS= read -r wt; do
-    [[ -z "$wt" ]] && continue
-    info "  └── ${wt}/"
-  done < <(git -C "$container" worktree list --porcelain 2>/dev/null \
-             | awk '/^worktree /{print $2}' \
-             | while read -r p; do
-                 [[ "$p" == "$container" ]] && continue
-                 printf '%s\n' "${p#"$container"/}"
-               done)
+  # Each worktree block in --porcelain is "worktree <path>" … "branch <ref>".
+  # Show the folder; annotate with the branch only when they differ (a folder
+  # like feat-new-shiny/ no longer reveals branch feat/new-shiny on its own).
+  local p branch rel
+  while IFS=$'\t' read -r p branch; do
+    [[ -z "$p" || "$p" == "$container" ]] && continue
+    rel="${p#"$container"/}"
+    if [[ -n "$branch" && "$branch" != "$rel" ]]; then
+      info "  └── ${rel}/   ← ${branch}"
+    else
+      info "  └── ${rel}/"
+    fi
+  done < <(git -C "$container" worktree list --porcelain 2>/dev/null | awk '
+      /^worktree /{ if (p!="") print p "\t" b; p=substr($0,10); b="" }
+      /^branch /  { b=$2; sub(/^refs\/heads\//,"",b) }
+      END         { if (p!="") print p "\t" b }')
 }
 
 # ---------------------------------------------------------------------------
@@ -254,25 +267,26 @@ cmd_init() {
   done < <(list_root_entries)
 
   local container; container="$(pwd)"
+  local wtdir; wtdir="$(wt_dirname "$branch")"
 
   step "git init --bare .git"
   run git init --bare .git
 
-  step "git worktree add --orphan ${branch}"
-  run git worktree add --orphan "$branch"
+  step "git worktree add --orphan -b ${branch} ${wtdir}/"
+  run git worktree add --orphan -b "$branch" "$wtdir"
 
   # Move any pre-existing files into the new worktree.
   if (( ${#preexisting[@]} )); then
-    step "moving existing files into ${branch}/"
+    step "moving existing files into ${wtdir}/"
     for e in "${preexisting[@]}"; do
-      run mv -- "$e" "$branch/"
+      run mv -- "$e" "$wtdir/"
     done
   fi
 
   print_tree "$container"
   info ""
   info "Next steps:"
-  info "  cd ${branch}"
+  info "  cd ${wtdir}"
   info "  # make your first commit, then: git push -u origin ${branch}"
 }
 
@@ -344,21 +358,44 @@ cmd_migrate() {
     done < <(git ls-files --others --ignored --exclude-standard --directory)
   fi
 
-  # Which branches still need a worktree? (drives idempotent resume.)
+  # Which branches still need a worktree? (drives idempotent resume.) Key this on
+  # the BRANCH, not the folder path: a branch can already have a worktree under
+  # the legacy nested layout (feature/x/), which the normalised folder name
+  # (feature-x) would never match — re-migrating must see it as already done, not
+  # try to check the branch out a second time.
+  # A branch "has a worktree" only if it is checked out at a path other than the
+  # container root: in a first-time (non-bare) migrate the current branch sits at
+  # the root and still needs its own subfolder worktree.
   local -a to_create=()
-  local existing_wts
-  existing_wts="$(git worktree list --porcelain | awk '/^worktree /{print $2}')"
+  local have_wt
+  have_wt="$(git worktree list --porcelain | awk -v c="$container" '
+      /^worktree /{ p=substr($0,10) }
+      /^branch /  { b=$2; sub(/^refs\/heads\//,"",b); if (p!=c) print b }')"
   for b in "${branches[@]}"; do
-    grep -qxF "${container}/${b}" <<<"$existing_wts" || to_create+=("$b")
+    grep -qxF "$b" <<<"$have_wt" || to_create+=("$b")
   done
 
-  # Which worktree do ignored files follow?
+  # Pre-flight: fail fast if two branches normalise to the same folder (e.g.
+  # feat/x and feat-x), before touching anything.
+  local -A seen_dir=()
+  local d
+  for b in "${to_create[@]}"; do
+    d="$(wt_dirname "$b")"
+    if [[ -n "${seen_dir[$d]:-}" ]]; then
+      die "migrate: branches '${seen_dir[$d]}' and '${b}' both map to folder '${d}/'. Rename one before migrating."
+    fi
+    seen_dir[$d]="$b"
+  done
+
+  # Which worktree do ignored files follow? Keep the branch name for messages;
+  # the on-disk folder it lands in is the normalised form.
   local ignored_target="$current"
   if [[ -z "$ignored_target" ]]; then
     ignored_target="$(default_branch_name)"
     # fall back to the first branch if the default isn't among them
     printf '%s\n' "${branches[@]}" | grep -qx "$ignored_target" || ignored_target="${branches[0]}"
   fi
+  local ignored_target_dir; ignored_target_dir="$(wt_dirname "$ignored_target")"
 
   # Nothing left to do? (resume re-run on an already-complete layout)
   if (( resume && ${#to_create[@]} == 0 )); then
@@ -371,13 +408,16 @@ cmd_migrate() {
   (( resume )) && info "  ${C_DIM}(resuming — repo already bare)${C_RST}"
   (( ! resume )) && info "  flip .git → bare (git config core.bare true)"
   info "  create worktrees:"
-  for b in "${to_create[@]}"; do info "    ${b}/"; done
+  for b in "${to_create[@]}"; do
+    d="$(wt_dirname "$b")"
+    if [[ "$d" != "$b" ]]; then info "    ${d}/   ← ${b}"; else info "    ${d}/"; fi
+  done
   if (( ${#committed[@]} )); then
     info "  remove committed files from root:"
     for e in "${committed[@]}"; do info "    ${e}"; done
   fi
   if (( ${#ignored[@]} )); then
-    info "  move ignored files into ${ignored_target}/:"
+    info "  move ignored files into ${ignored_target_dir}/:"
     for e in "${ignored[@]}"; do info "    ${e}"; done
   fi
   info ""
@@ -417,18 +457,18 @@ cmd_migrate() {
 
   step "creating worktrees"
   for b in "${to_create[@]}"; do
-    run git worktree add "$b" "$b"
+    run git worktree add "$(wt_dirname "$b")" "$b"
   done
 
   # Move ignored files into their target worktree.
   if [[ -n "$stash" ]]; then
-    step "moving ignored files into ${ignored_target}/"
+    step "moving ignored files into ${ignored_target_dir}/"
     for e in "${ignored[@]}"; do
       if [[ -e "$stash/$e" || -L "$stash/$e" ]]; then
         # The tracked parent dir (if any) was already recreated by the worktree
         # checkout; we drop the ignored path back in at the same relative spot.
-        run mkdir -p "${ignored_target}/$(dirname -- "$e")"
-        run mv -- "$stash/$e" "${ignored_target}/$e"
+        run mkdir -p "${ignored_target_dir}/$(dirname -- "$e")"
+        run mv -- "$stash/$e" "${ignored_target_dir}/$e"
       fi
     done
     # Only empty scaffolding dirs remain now; remove them.
@@ -452,7 +492,7 @@ cmd_migrate() {
   print_tree "$container"
   info ""
   info "Next steps:"
-  info "  cd ${ignored_target}"
+  info "  cd ${ignored_target_dir}"
   info "  git worktree list"
 }
 
@@ -493,7 +533,8 @@ cmd_add() {
     [[ -n "$branch" ]] || die "add: no branch selected."
   fi
 
-  local wt="$container/$branch"
+  local wtdir; wtdir="$(wt_dirname "$branch")"
+  local wt="$container/$wtdir"
 
   # Guard: branch already has a worktree → report and stop (idempotent).
   local existing; existing="$(wt_path_for_branch "$branch")"
@@ -501,12 +542,19 @@ cmd_add() {
     info "${C_GRN}Already present${C_RST} — '${branch}' has a worktree at ${existing}."
     return 0
   fi
-  # Guard: target path occupied by something that isn't that worktree.
-  [[ -e "$wt" ]] && die "add: '${wt}' already exists (not a worktree for '${branch}')."
+  # Guard: target folder occupied by something that isn't that worktree. Mention
+  # the normalisation so a surprising name (feat/x → feat-x) is self-explanatory.
+  if [[ -e "$wt" ]]; then
+    if [[ "$wtdir" != "$branch" ]]; then
+      die "add: folder '${wt}' already exists (branch '${branch}' normalises to '${wtdir}/'). Rename or remove it first."
+    else
+      die "add: '${wt}' already exists (not a worktree for '${branch}')."
+    fi
+  fi
 
   # Resolve how the branch materialises (offline; never fetches).
   if git show-ref --verify --quiet "refs/heads/$branch"; then
-    step "git worktree add ${branch}/  (existing local branch)"
+    step "git worktree add ${wtdir}/  (existing local branch ${branch})"
     run git worktree add "$wt" "$branch"
   else
     local remote=""
@@ -519,10 +567,10 @@ cmd_add() {
       done < <(git remote)
     fi
     if [[ -n "$remote" ]]; then
-      step "git worktree add ${branch}/  (tracking ${remote}/${branch})"
+      step "git worktree add ${wtdir}/  (tracking ${remote}/${branch})"
       run git worktree add --track -b "$branch" "$wt" "${remote}/${branch}"
     else
-      step "git worktree add ${branch}/  (new branch from ${base})"
+      step "git worktree add ${wtdir}/  (new branch ${branch} from ${base})"
       run git worktree add -b "$branch" "$wt" "$base"
     fi
   fi

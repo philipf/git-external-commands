@@ -11,8 +11,9 @@ test_add_creates_new_branch_from_head() {
   sandbox
   make_layout
   gitwt add feature/x >/dev/null
-  assert_file feature/x
-  assert_eq "$(git -C feature/x rev-parse --abbrev-ref HEAD)" "feature/x"
+  assert_file feature-x                              # folder flattened
+  assert_absent feature/x                            # not nested
+  assert_eq "$(git -C feature-x rev-parse --abbrev-ref HEAD)" "feature/x"  # branch keeps slash
 }
 
 test_add_anchors_to_container_from_inside_worktree() {
@@ -21,8 +22,8 @@ test_add_anchors_to_container_from_inside_worktree() {
   sandbox
   make_layout
   ( cd main && gitwt add feature/y >/dev/null )
-  assert_file feature/y          # sibling at container
-  assert_absent main/feature/y   # not nested under main/
+  assert_file feature-y          # sibling at container (flattened)
+  assert_absent main/feature-y   # not nested under main/
 }
 
 test_add_checks_out_existing_local_branch() {
@@ -30,8 +31,8 @@ test_add_checks_out_existing_local_branch() {
   make_layout
   git -C main branch feat/a
   gitwt add feat/a >/dev/null
-  assert_file feat/a
-  assert_eq "$(git -C feat/a rev-parse --abbrev-ref HEAD)" "feat/a"
+  assert_file feat-a
+  assert_eq "$(git -C feat-a rev-parse --abbrev-ref HEAD)" "feat/a"
 }
 
 test_add_tracks_remote_branch_offline() {
@@ -45,11 +46,11 @@ test_add_tracks_remote_branch_offline() {
   cd clone
   git fetch -q origin
   gitwt migrate -y >/dev/null            # only main/ (feat/remote is remote-only)
-  assert_absent feat/remote
+  assert_absent feat-remote
   gitwt add feat/remote >/dev/null
-  assert_file feat/remote
-  assert_eq "$(git -C feat/remote rev-parse --abbrev-ref HEAD)" "feat/remote"
-  assert_eq "$(git -C feat/remote rev-parse --abbrev-ref 'feat/remote@{upstream}')" "origin/feat/remote"
+  assert_file feat-remote
+  assert_eq "$(git -C feat-remote rev-parse --abbrev-ref HEAD)" "feat/remote"
+  assert_eq "$(git -C feat-remote rev-parse --abbrev-ref 'feat/remote@{upstream}')" "origin/feat/remote"
 }
 
 test_add_uses_from_ref_for_new_branch() {
@@ -59,7 +60,7 @@ test_add_uses_from_ref_for_new_branch() {
   echo two > f2 && git add -A && git commit -qm second   # commit 2 (still a normal repo)
   gitwt migrate -y >/dev/null
   gitwt add feature/old --from "$first" >/dev/null
-  assert_eq "$(git -C feature/old rev-parse HEAD)" "$first"   # branched at commit 1, not HEAD
+  assert_eq "$(git -C feature-old rev-parse HEAD)" "$first"   # branched at commit 1, not HEAD
 }
 
 test_add_copies_ignored_env_and_skips_heavy() {
@@ -71,8 +72,8 @@ test_add_copies_ignored_env_and_skips_heavy() {
   echo "SECRET=1" > main/.env
   mkdir -p main/node_modules/x && echo y > main/node_modules/x/i.js
   local out; out="$(gitwt add feature/x 2>&1)"
-  assert_file feature/x/.env                 # light ignored file copied
-  assert_absent feature/x/node_modules       # heavy dir skipped
+  assert_file feature-x/.env                 # light ignored file copied
+  assert_absent feature-x/node_modules       # heavy dir skipped
   assert_contains "$out" "node_modules"      # hint mentions it
   assert_contains "$out" "npm install"
 }
@@ -85,7 +86,7 @@ test_add_copy_all_includes_heavy() {
   gitwt migrate -y >/dev/null
   mkdir -p main/node_modules/x && echo y > main/node_modules/x/i.js
   gitwt add feature/x --copy-all >/dev/null
-  assert_file feature/x/node_modules/x/i.js
+  assert_file feature-x/node_modules/x/i.js
 }
 
 test_add_no_copy_ignored() {
@@ -96,7 +97,7 @@ test_add_no_copy_ignored() {
   gitwt migrate -y >/dev/null
   echo "SECRET=1" > main/.env
   gitwt add feature/x --no-copy-ignored >/dev/null
-  assert_absent feature/x/.env
+  assert_absent feature-x/.env
 }
 
 test_add_aborts_outside_bare_layout() {
@@ -118,15 +119,17 @@ test_add_noops_when_worktree_exists() {
 test_add_aborts_when_path_occupied() {
   sandbox
   make_layout
-  mkdir -p feature/x && touch feature/x/keep   # occupy target, not a worktree
+  mkdir -p feature-x && touch feature-x/keep   # occupy normalised target, not a worktree
   assert_fails gitwt add feature/x
+  local out; out="$(gitwt add feature/x 2>&1 || true)"
+  assert_contains "$out" "normalises to"        # message explains the flattened name
 }
 
 test_add_dry_run_changes_nothing() {
   sandbox
   make_layout
   gitwt add feature/x --dry-run >/dev/null
-  assert_absent feature/x
+  assert_absent feature-x
 }
 
 test_add_no_branch_noninteractive_aborts() {
