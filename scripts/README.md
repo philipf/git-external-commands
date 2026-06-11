@@ -43,8 +43,12 @@ The worker (`gj-pick`) prints the chosen path; a small shell function does the
    both):
 
    ```sh
-   gj() { local d; d=$(gj-pick "$@") || return; [ -n "$d" ] && cd "$d"; }
+   gj()  { local d; d=$(gj-pick "$@") || return; [ -n "$d" ] && cd "$d"; }
+   gjj() { gj --cwd "$@"; }   # same, but scoped to the current directory
    ```
+
+   `gjj` is an optional shorthand for `gj --cwd` — e.g. `gjj api` scopes the
+   pick to `$PWD` and pre-filters with `api`.
 
 `gj-pick` on its own just prints a path to stdout (pipeable / scriptable);
 `gj` is the interactive jump.
