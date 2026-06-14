@@ -78,6 +78,19 @@ test_add_copies_ignored_env_and_skips_heavy() {
   assert_contains "$out" "npm install"
 }
 
+test_add_copies_ignored_files_nested_in_tracked_dir() {
+  sandbox
+  make_repo
+  mkdir -p src/lib
+  printf 'secret.conf\n' > src/lib/.gitignore
+  echo "tracked" > src/lib/tracked.go
+  git add -A && git commit -qm setup
+  gitwt migrate -y >/dev/null
+  echo "DB_URL=localhost" > main/src/lib/secret.conf
+  gitwt add feature/x >/dev/null
+  assert_file feature-x/src/lib/secret.conf     # nested ignored file copied
+}
+
 test_add_copy_all_includes_heavy() {
   sandbox
   make_repo

@@ -605,20 +605,23 @@ cmd_add() {
     if [[ -n "$src" && -d "$src" && "$src" != "$wt" ]]; then
       local cp_reflink=()
       cp --reflink=auto --version >/dev/null 2>&1 && cp_reflink=(--reflink=auto)
-      local name copied=0 h
+      local name bname src_parent copied=0 h
       while IFS= read -r name; do
         [[ -z "$name" ]] && continue
-        git -C "$src" check-ignore -q -- "$name" || continue   # only ignored entries
-        if is_skip_dir "$name" && (( ! copy_all )); then
-          h="$(reinstall_hint "$src" "$name")"
+        name="${name%/}"        # strip trailing slash from directory entries
+        bname="${name##*/}"     # basename — used for skip-dir check
+        if is_skip_dir "$bname" && (( ! copy_all )); then
+          src_parent="$src/$(dirname -- "$name")"
+          h="$(reinstall_hint "$src_parent" "$bname")"
           if [[ -n "$h" ]]; then hints+=("${name}/ → ${h}")
           else                   hints+=("${name}/ (recreate as needed)"); fi
           continue
         fi
         [[ -e "$wt/$name" ]] && continue                       # never overwrite
         copied=$((copied + 1))
+        run mkdir -p "$wt/$(dirname -- "$name")"
         run cp -a ${cp_reflink[@]+"${cp_reflink[@]}"} -- "$src/$name" "$wt/$name"
-      done < <(list_dir_entries "$src")
+      done < <(git -C "$src" ls-files --others --ignored --exclude-standard --directory)
       (( copied )) && step "copied ${copied} ignored item(s) from ${src#"$container"/}/"
     fi
   fi
